@@ -11,11 +11,13 @@
 #define SCL GPIO_NUM_22
 #define MPU_6050 0x68
 #define POWER 0x6B
-#define TAG "FREEFALL"
+#define TAG "DATA"
 #define ACCEL_CONFIG 0x1C
 #define FF_THR 0x1D	
 #define FF_DUR 0x1E
 #define INT_PIN 17
+#define GYRO_CONFIG 0x1B
+
 
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     ESP_LOGI(TAG, "FALL DETECTED");
@@ -65,31 +67,46 @@ void config_ff(uint8_t thrsh, uint8_t dur) {
     register_write_byte(FF_DUR, dur);
 }
 
-void i2c_read(int16_t *ax, int16_t *ay, int16_t *az) {
+void i2c_read_acc(float *ax, float *ay, float *az) {
     uint8_t acc = 0x3B;
+    uint8_t data[6];
+    i2c_master_write_read_device(I2C_NUM_0, MPU_6050, &acc, 1, data, 6, pdMS_TO_TICKS(100));
+    
+    int16_t raw_ax = ((int16_t)data[0] << 8) | data[1];
+    int16_t raw_ay = ((int16_t)data[2] << 8) | data[3];
+    int16_t raw_az = ((int16_t)data[4] << 8) | data[5];
+    
+    *ax = ((float)raw_ax / 16384.0) * 9.81;
+    *ay = ((float)raw_ay / 16384.0) * 9.81;
+    *az = ((float)raw_az / 16384.0) * 9.81;
+}
+
+void i2c_read_gyro(float *ax, float *ay, float *az) {
+    uint8_t acc = 0x43;
     uint8_t data[6];
     i2c_master_write_read_device(I2C_NUM_0, MPU_6050, &acc, 1, data, 6, pdMS_TO_TICKS(100));
     
     *ax = ((int16_t)data[0] << 8) | data[1];
     *ay = ((int16_t)data[2] << 8) | data[3];
     *az = ((int16_t)data[4] << 8) | data[5];
-    
-    *ax = *ax / 16384;
-    *ay = *ay / 16384;
-    *az = *az / 16384;
 }
+
+
+
 
 void app_main(void) {
     i2c_config();
     config_gpio();
     mpu_wake();
     set_accel_range(0);
-    config_ff(0x05, 0x06); 
+    config_ff(0x1F4, 0x06); 
 
     while(1) {
-        int16_t ax, ay, az;
-        i2c_read(&ax, &ay, &az);
-        ESP_LOGI(TAG, "Acceleration: x=%d, y=%d, z=%d", ax, ay, az);
+        float ax, ay, az,gx,gy,gz;
+        i2c_read_acc(&ax, &ay, &az);
+        i2c_read_gyro(&gx,&gy,&gz);
+        ESP_LOGI(TAG, "Acceleration: x=%f, y=%f, z=%f", ax, ay, az);
+        ESP_LOGI(TAG, "Gyro Raw: x=%f, y=%f, z=%f", gx, gy, gz);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
